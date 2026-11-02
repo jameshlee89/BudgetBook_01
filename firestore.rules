@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// [REQ-SHARE-007] 가계부 구성원만 가계부와 거래를 읽고 쓸 수 있다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ledgerDoc(ledgerId) {
+      return get(/databases/$(database)/documents/ledgers/$(ledgerId));
+    }
+
+    function isMember(ledgerId) {
+      return signedIn() && request.auth.uid in ledgerDoc(ledgerId).data.members;
+    }
+
+    match /ledgers/{ledgerId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.members == [request.auth.uid];
+
+      // 구성원 수정: 소유자·초대 코드는 바꿀 수 없고, 구성원 목록은 소유자만 바꾼다.
+      // [REQ-SHARE-005] 참여: 초대 코드를 아는 사용자가 자기 자신만 members 에 추가한다.
+      allow update: if signedIn() && (
+        (
+          request.auth.uid in resource.data.members
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.inviteCode == resource.data.inviteCode
+          && (request.resource.data.members.toSet() == resource.data.members.toSet()
+              || resource.data.ownerUid == request.auth.uid)
+        ) || (
+          !(request.auth.uid in resource.data.members)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberNames', 'joinedWith'])
+          && request.resource.data.members.toSet() == resource.data.members.toSet().union([request.auth.uid].toSet())
+          && get(/databases/$(database)/documents/invites/$(request.resource.data.joinedWith)).data.ledgerId == ledgerId
+        )
+      );
+
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+
+      match /transactions/{transactionId} {
+        allow read, write: if isMember(ledgerId);
+      }
+    }
+
+    // [REQ-SHARE-004] 초대 코드 → 가계부. 코드를 아는 사람만 단건 조회 가능(목록 조회 불가).
+    match /invites/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && getAfter(/databases/$(database)/documents/ledgers/$(request.resource.data.ledgerId)).data.ownerUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}

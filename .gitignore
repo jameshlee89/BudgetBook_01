@@ -1,0 +1,11 @@
+*.iml
+.gradle/
+/local.properties
+.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+# Firebase 설정은 프로젝트별로 발급받아 넣는다
+app/google-services.json
