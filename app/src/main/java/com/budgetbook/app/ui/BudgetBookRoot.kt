@@ -14,7 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -107,7 +107,7 @@ private fun MainScaffold(viewModel: MainViewModel, snackbar: SnackbarHostState) 
                             Icon(
                                 when (t) {
                                     Tab.STATS -> Icons.Default.Home
-                                    Tab.LIST -> Icons.Default.List
+                                    Tab.LIST -> Icons.AutoMirrored.Filled.List
                                     Tab.SHARE -> Icons.Default.Person
                                 },
                                 contentDescription = null,

@@ -102,6 +102,7 @@
 | TC-SHARE-005-02 | REQ-SHARE-005 | Manual | 계정 B 에서 계정 A 의 코드를 소문자로 입력해 참여 | B 의 가계부 목록에 추가, 구성원 2명 표시 | - |
 | TC-SHARE-005-03 | REQ-SHARE-005 | Manual | 형식이 틀린 코드 / 없는 코드 입력 | 각각 오류 스낵바 | - |
 | TC-SHARE-006-01 | REQ-SHARE-006 | Manual | A·B 두 기기에서 같은 가계부를 연 상태로 A 가 추가·수정·삭제, A 기기에 카드 문자 수신 | B 화면에 수 초 안에 모두 반영 | - |
+| TC-SHARE-006-02 | REQ-SHARE-006 | Manual | 새 계정으로 최초 로그인 직후(앱 재시작 없이) 카드 문자 수신 | 수 초 안에 통계·내역에 반영 (기본 가계부 생성 직후 구독 거부 시 재연결) | - |
 | TC-SHARE-007-01 | REQ-SHARE-007 | Rules | 비구성원 계정으로 `ledgers/{id}` 와 `transactions` 읽기/쓰기 | 모두 거부 | - |
 | TC-SHARE-007-02 | REQ-SHARE-007 | Rules | 구성원(비소유자)이 members 에서 다른 사람 제거, ownerUid/inviteCode 변경 | 거부 | - |
 | TC-SHARE-007-03 | REQ-SHARE-007 | Rules | 비구성원이 틀린 joinedWith 로 참여 / 다른 uid 를 추가 / `invites` 목록 조회 | 거부 (올바른 코드로 자기 자신만 추가는 허용) | - |
@@ -114,5 +115,7 @@
 |---|---|---|---|
 | 2026-11-02 | 추적성 검사 (`tools/trace_check.py`) | 통과 | TRACEABILITY.md 생성 |
 | 2026-11-02 | 문자 해석 정규식 사전 점검 | 통과 | JDK 미설치 환경이라 Kotlin 대신 동일 정규식을 Python 으로 옮겨 TC-SMS-002/003/004 입력 23건 확인 |
-| - | Unit (`./gradlew testDebugUnitTest`) | **미실행** | 작성 환경에 JDK/Android SDK 없음. Android Studio 에서 실행 후 기록 |
-| - | Manual / Rules | **미실행** | Firebase 프로젝트 설정 후 실기기에서 수행 |
+| 2026-11-03 | Unit (`./gradlew testDebugUnitTest`) | **통과 (39/39 TC)** | AGP 9.5.0 / Gradle 9.6.1 / JDK 25. `assembleDebug` 도 성공. 임시 더미 google-services.json 으로 빌드 |
+| 2026-11-03 | Manual: TC-SHARE-001-01, TC-SHARE-003-01, TC-SMS-001-02, TC-SMS-004-01(일반 문자), TC-SMS-007-01, TC-CHART-001-02, TC-CHART-003-03 | 통과 | 에뮬레이터(API 37). 카드 문자 4건 실시간 기입·분류·도넛 반영 확인 |
+| 2026-11-03 | Manual: TC-SHARE-006-02 | **결함 발견 → 수정** | 최초 로그인 직후 받은 문자가 앱 재시작 전까지 화면에 안 보임(저장은 정상). Firestore 구독이 거부된 뒤 재연결되지 않던 문제 → 오류 시 재구독하도록 수정. 수정본은 기존 계정으로 실시간 반영만 확인, 최초 로그인 시나리오 재검증 필요 |
+| - | 그 외 Manual / Rules | **미실행** | |

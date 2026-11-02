@@ -13,11 +13,15 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.QuerySnapshot
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.tasks.await
+import kotlin.math.min
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.YearMonth
@@ -40,15 +44,29 @@ class FirestoreLedgerRepository(
     private val invites get() = db.collection("invites")
     private fun transactions(ledgerId: String) = ledgers.document(ledgerId).collection("transactions")
 
-    override fun observeLedgers(uid: String): Flow<List<Ledger>> = callbackFlow {
-        val registration = ledgers.whereArrayContains("members", uid).addSnapshotListener { snapshot, error ->
+    override fun observeLedgers(uid: String): Flow<List<Ledger>> =
+        ledgers.whereArrayContains("members", uid).observe("observeLedgers") { snapshot ->
+            snapshot.documents.mapNotNull { it.toLedger() }.sortedBy { it.createdAt }
+        }
+
+    /**
+     * Firestore 리스너는 오류(예: PERMISSION_DENIED)가 한 번 나면 다시 연결되지 않는다.
+     * 첫 로그인 직후 기본 가계부가 서버에 기록되기 전에 거래 구독이 시작되면 거부되므로,
+     * 오류가 나면 잠시 뒤 다시 구독한다. [REQ-SHARE-006]
+     */
+    private fun <T> Query.observe(label: String, map: (QuerySnapshot) -> T): Flow<T> = callbackFlow {
+        val registration = addSnapshotListener { snapshot, error ->
             if (error != null) {
-                Log.w(TAG, "observeLedgers", error)
+                close(error)
                 return@addSnapshotListener
             }
-            trySend(snapshot?.documents?.mapNotNull { it.toLedger() }.orEmpty().sortedBy { it.createdAt })
+            if (snapshot != null) trySend(map(snapshot))
         }
         awaitClose { registration.remove() }
+    }.retryWhen { cause, attempt ->
+        Log.w(TAG, "$label failed, retry #${attempt + 1}", cause)
+        delay(min(RETRY_BASE_MS shl attempt.toInt().coerceAtMost(6), RETRY_MAX_MS))
+        true
     }
 
     override suspend fun ensureDefaultLedger(user: UserInfo) {
@@ -105,25 +123,18 @@ class FirestoreLedgerRepository(
         ledgerId
     }
 
-    override fun observeTransactions(ledgerId: String, month: YearMonth): Flow<List<Transaction>> = callbackFlow {
+    override fun observeTransactions(ledgerId: String, month: YearMonth): Flow<List<Transaction>> {
         val start = month.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
         val end = month.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val registration = transactions(ledgerId)
+        return transactions(ledgerId)
             .whereGreaterThanOrEqualTo("dateTime", start)
             .whereLessThan("dateTime", end)
             .orderBy("dateTime", Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.w(TAG, "observeTransactions", error)
-                    return@addSnapshotListener
-                }
-                trySend(
-                    snapshot?.documents.orEmpty()
-                        .filter { it.getBoolean("deleted") != true }
-                        .mapNotNull { it.toTransaction(ledgerId) },
-                )
+            .observe("observeTransactions") { snapshot ->
+                snapshot.documents
+                    .filter { it.getBoolean("deleted") != true }
+                    .mapNotNull { it.toTransaction(ledgerId) }
             }
-        awaitClose { registration.remove() }
     }
 
     override suspend fun upsertTransaction(transaction: Transaction) {
@@ -206,6 +217,8 @@ class FirestoreLedgerRepository(
     companion object {
         private const val TAG = "LedgerRepository"
         private const val INVITE_CODE_RETRIES = 3
+        private const val RETRY_BASE_MS = 500L
+        private const val RETRY_MAX_MS = 30_000L
         const val DEFAULT_LEDGER_NAME = "내 가계부"
     }
 }

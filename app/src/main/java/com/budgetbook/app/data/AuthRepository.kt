@@ -6,9 +6,11 @@ import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.NoCredentialException
 import com.budgetbook.app.R
 import com.budgetbook.app.domain.model.UserInfo
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -30,13 +32,21 @@ class AuthRepository(private val auth: FirebaseAuth) {
     fun currentUserNow(): UserInfo? = auth.currentUser?.toUserInfo()
 
     suspend fun signIn(activity: Activity) {
-        val googleIdOption = GetGoogleIdOption.Builder()
+        // google-services.json 에서 생성되는 웹 클라이언트 ID
+        val serverClientId = activity.getString(R.string.default_web_client_id)
+        val credentialManager = CredentialManager.create(activity)
+
+        val accountPicker = GetGoogleIdOption.Builder()
             .setFilterByAuthorizedAccounts(false)
-            // google-services.json 에서 생성되는 웹 클라이언트 ID
-            .setServerClientId(activity.getString(R.string.default_web_client_id))
+            .setServerClientId(serverClientId)
             .build()
-        val request = GetCredentialRequest.Builder().addCredentialOption(googleIdOption).build()
-        val credential = CredentialManager.create(activity).getCredential(activity, request).credential
+        val credential = try {
+            credentialManager.getCredential(activity, GetCredentialRequest.Builder().addCredentialOption(accountPicker).build())
+        } catch (e: NoCredentialException) {
+            // 기기에 구글 계정이 없으면 계정을 추가/로그인할 수 있는 구글 로그인 화면을 띄운다.
+            val signInWithGoogle = GetSignInWithGoogleOption.Builder(serverClientId).build()
+            credentialManager.getCredential(activity, GetCredentialRequest.Builder().addCredentialOption(signInWithGoogle).build())
+        }.credential
 
         check(credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
             "지원하지 않는 로그인 방식입니다."
